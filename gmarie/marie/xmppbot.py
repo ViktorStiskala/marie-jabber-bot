@@ -1,10 +1,11 @@
+# Monkey-patch stdlib (have to be used before all other imports)
 import gevent.monkey
 gevent.monkey.patch_all()
-import gevent
 
 import logging
 log = logging.getLogger(__name__)
 
+import gevent
 from sleekxmpp import ClientXMPP
 from sleekxmpp.exceptions import IqError, IqTimeout
 
@@ -51,6 +52,7 @@ class XMPPBot(ClientXMPP):
             self.disconnect()
 
     def _message_received(self, msg):
+        # TODO: command processing
         if msg['type'] in ('chat', 'normal'):
             msg.reply("Received message: \n%(body)s" % msg).send()
 

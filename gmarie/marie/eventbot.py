@@ -1,17 +1,22 @@
-import gevent.monkey
-gevent.monkey.patch_all()
-
-from datetime import datetime, timedelta
-from xmppbot import XMPPBot
-from redish import serialization
-from redish.client import Client
-from gevent.event import AsyncResult
-
+import collections
 import logging
 log = logging.getLogger(__name__)
 
+from gevent.event import AsyncResult
+from datetime import datetime, timedelta
+from redish import serialization
+from redish.client import Client
+
+from xmppbot import XMPPBot
+
 
 class EventBot(XMPPBot):
+    """
+    XMPP Bot with listeners and event support
+
+    Available events:
+    answer_received     triggered after the eventbot received answer to particular question
+    """
     REDIS_CONFIG = {
         'host': 'localhost',
         'port': 6379,
@@ -21,9 +26,7 @@ class EventBot(XMPPBot):
     def __init__(self, jid, password, redis_config=None):
         super(EventBot, self).__init__(jid, password)
         self._listeners = []
-        self._events = {
-            'answer_received': AsyncResult()
-        }
+        self._events = collections.defaultdict(AsyncResult)
 
         # Redis init
         if redis_config is not None:
@@ -39,13 +42,13 @@ class EventBot(XMPPBot):
     def register_listener(self, listener):
         """
         Register external event listener.
-        Have to be instance of Greenlet
         """
         self._listeners.append(listener)
 
     def register_callback(self, event, callback):
         """
-        Register callback according to event name
+        Register callback according to event name.
+        Intended mainly for use by listeners
         """
         self._events[event].rawlink(callback)
 
