@@ -7,9 +7,11 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(levelname)-8s %(message)s')
 
     listener = HttpListener(8088)
+    listener_8000 = HttpListener(8000)
 
     bot = eventbot.EventBot('marie@abdoc.net', 'ozXM8vkCVy3vyOmPjqRl')
     bot.register_listener(listener)
+    # bot.register_listener(listener_8000)
     bot.start()
 
     # bot2 = eventbot.EventBot('marie.example@jabbim.cz', 'y3cPYVrYuu8iHvtwcbWX')

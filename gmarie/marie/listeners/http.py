@@ -27,9 +27,10 @@ class HttpListener(Listener):
 
         return postdata
 
-    def answer_received(self, message):
+    def answer_received(self, data):
+        answer = data.get()
         print "Received answer"
-        print message.get()
+        print answer
 
     def _handle_connection(self, request):
         # accept only HTTP POST
