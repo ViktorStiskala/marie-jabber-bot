@@ -15,7 +15,7 @@ class XMPPBot(ClientXMPP):
         self._worker = None
 
         self.add_event_handler("session_start", self.session_start)
-        self.add_event_handler("message", self.message_received)
+        self.add_event_handler("message", self._message_received)
 
         # If you wanted more functionality, here's how to register plugins:
         # self.register_plugin('xep_0030') # Service Discovery
@@ -50,7 +50,7 @@ class XMPPBot(ClientXMPP):
             logging.error("Server did not responded in time")
             self.disconnect()
 
-    def message_received(self, msg):
+    def _message_received(self, msg):
         if msg['type'] in ('chat', 'normal'):
             msg.reply("Received message: \n%(body)s" % msg).send()
 

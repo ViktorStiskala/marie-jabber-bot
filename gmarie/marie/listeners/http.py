@@ -1,14 +1,13 @@
 from gevent import http, Greenlet
 from urlparse import parse_qsl
+from marie.listeners import Listener
 import simplejson
 
 import logging
 log = logging.getLogger(__name__)
 
 
-class HttpListener(Greenlet):
-    xmpp = None
-
+class HttpListener(Listener):
     def __init__(self, port, address="0.0.0.0"):
         super(HttpListener, self).__init__()
         self._port = port
@@ -28,6 +27,10 @@ class HttpListener(Greenlet):
 
         return postdata
 
+    def answer_received(self, message):
+        print "Received answer"
+        print message.get()
+
     def _handle_connection(self, request):
         # accept only HTTP POST
         if request.typestr != 'POST':
@@ -41,16 +44,14 @@ class HttpListener(Greenlet):
             headers[k.lower()] = v
 
         postdata = self._get_postdata(request, headers)
-        print postdata
 
+        # TODO: handle postdata
         self.xmpp.send_question('viktorstiskala@abdoc.net', "test", "123")
 
-        if request.uri == '/':
-            request.add_output_header('Content-Type', 'text/html')
-            request.send_reply(200, "OK", '<b>hello world</b>')
-        else:
-            request.add_output_header('Content-Type', 'text/html')
-            request.send_reply(404, "Not Found", "<h1>Not Found</h1>")
+        request.send_reply(200, "OK", "OK")
+
+    def connected(self):
+        self.xmpp.register_callback('answer_received', self.answer_received)
 
     def _run(self):
         log.info('HTTP Listener serving on %s:%d...' % (self._address, self._port))
