@@ -1,20 +1,22 @@
+import gevent.monkey
+gevent.monkey.patch_all()
+
 import logging
+
+import marie
 from marie.listeners.http import HttpListener
-from marie import eventbot
-import gevent
+from marie.eventbot import EventBot
+
+class Dummy(object):
+    def register_callback(self, event, callback):
+        pass
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(levelname)-8s %(message)s')
 
-    listener = HttpListener(8088)
-    listener_8000 = HttpListener(8000)
+    with marie.serve_forever() as m:
+        bot = EventBot('marie@abdoc.net', 'ozXM8vkCVy3vyOmPjqRl')
+        m.start(bot)
 
-    bot = eventbot.EventBot('marie@abdoc.net', 'ozXM8vkCVy3vyOmPjqRl')
-    bot.register_listener(listener)
-    # bot.register_listener(listener_8000)
-    bot.start()
-
-    # bot2 = eventbot.EventBot('marie.example@jabbim.cz', 'y3cPYVrYuu8iHvtwcbWX')
-    # bot2.start(block=False)
-    #
-    # gevent.joinall([bot.worker, bot2.worker])
+        listener = HttpListener(bot, 8088)
+        m.start(listener)

@@ -1,0 +1,3 @@
+from marie.contextmanager import GeventJoinallManager
+
+serve_forever = GeventJoinallManager

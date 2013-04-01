@@ -6,14 +6,15 @@ import logging
 log = logging.getLogger(__name__)
 
 import gevent
+from gevent import Greenlet, GreenletExit
 from sleekxmpp import ClientXMPP
 from sleekxmpp.exceptions import IqError, IqTimeout
 
 
-class XMPPBot(ClientXMPP):
+class XMPPBot(ClientXMPP, Greenlet):
     def __init__(self, jid, password):
-        super(XMPPBot, self).__init__(jid, password)
-        self._worker = None
+        ClientXMPP.__init__(self, jid, password)
+        Greenlet.__init__(self)
 
         self.add_event_handler("session_start", self.session_start)
         self.add_event_handler("message", self._message_received)
@@ -29,12 +30,6 @@ class XMPPBot(ClientXMPP):
         # need to use a different SSL version:
         # import ssl
         # self.ssl_version = ssl.PROTOCOL_SSLv3
-
-    @property
-    def worker(self):
-        if self._worker is None:
-            raise RuntimeError('start() have to be called prior to accessing worker')
-        return self._worker
 
     def send_chat_message(self, to, text):
         return self.send_message(to, mbody=text, mtype='chat')
@@ -56,13 +51,6 @@ class XMPPBot(ClientXMPP):
         if msg['type'] in ('chat', 'normal'):
             msg.reply("Received message: \n%(body)s" % msg).send()
 
-    def _run_bot(self):
+    def _run(self):
         self.connect()
         self.process(block=False)
-
-    def start(self, block=True):
-        worker = gevent.spawn(self._run_bot)
-        self._worker = worker
-
-        if block:
-            worker.join()

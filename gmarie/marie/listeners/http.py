@@ -1,4 +1,4 @@
-from gevent import http, Greenlet
+from gevent import http, Greenlet, GreenletExit
 from urlparse import parse_qsl
 from marie.listeners import Listener
 import simplejson
@@ -8,10 +8,12 @@ log = logging.getLogger(__name__)
 
 
 class HttpListener(Listener):
-    def __init__(self, port, address="0.0.0.0"):
-        super(HttpListener, self).__init__()
+    def __init__(self, xmpp, port, address="0.0.0.0"):
+        super(HttpListener, self).__init__(xmpp)
         self._port = port
         self._address = address
+
+        self.xmpp.register_callback('answer_received', self.answer_received)
 
     def _get_postdata(self, request, headers):
         # get input data from buffer
@@ -51,11 +53,6 @@ class HttpListener(Listener):
 
         request.send_reply(200, "OK", "OK")
 
-    def connected(self):
-        self.xmpp.register_callback('answer_received', self.answer_received)
-
     def _run(self):
         log.info('HTTP Listener serving on %s:%d...' % (self._address, self._port))
         http.HTTPServer((self._address, self._port), self._handle_connection).serve_forever()
-
-

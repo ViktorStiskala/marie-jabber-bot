@@ -1,11 +1,9 @@
 from gevent import Greenlet
 
-
 class Listener(Greenlet):
-    xmpp = None
-
-    def __init__(self):
+    def __init__(self, xmpp):
         Greenlet.__init__(self)
+        self.xmpp = xmpp
 
     def connected(self):
         """Function called after the Listener is connected to bot class and self.xmpp is initialised"""
