@@ -17,5 +17,5 @@ class GeventJoinallManager(object):
         try:
             gevent.joinall(self._greenlets)
         except KeyboardInterrupt:
-            # TODO: real kill
-            gevent.killall(self._greenlets, block=True)
+            # stop all running listeners
+            map(lambda self: self.stop_processing(), self._greenlets)

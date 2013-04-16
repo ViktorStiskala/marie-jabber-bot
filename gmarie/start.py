@@ -7,9 +7,6 @@ import marie
 from marie.listeners.http import HttpListener
 from marie.eventbot import EventBot
 
-class Dummy(object):
-    def register_callback(self, event, callback):
-        pass
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(levelname)-8s %(message)s')

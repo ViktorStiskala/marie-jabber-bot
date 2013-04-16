@@ -1,10 +1,23 @@
+from gevent import monkey
+monkey.patch_all()
+
+from datetime import timedelta
 from gevent import http, Greenlet, GreenletExit
 from urlparse import parse_qsl
+import gevent
+import grequests
 from marie.listeners import Listener
 import simplejson
+from simplejson.decoder import JSONDecodeError
 
 import logging
 log = logging.getLogger(__name__)
+
+
+def http_additional_serialize(value):
+    if isinstance(value, timedelta):
+        return value.total_seconds()
+    raise TypeError("Unsupported value")
 
 
 class HttpListener(Listener):
@@ -25,14 +38,38 @@ class HttpListener(Listener):
             for k, v in qs:
                 postdata[k] = v
         else:
-            postdata = simplejson.loads(data)
+            try:
+                postdata = simplejson.loads(data)
+            except JSONDecodeError:
+                return None
 
         return postdata
 
     def answer_received(self, data):
-        answer = data.get()
-        print "Received answer"
-        print answer
+        question, answer = data
+        print "trigger"
+
+        # send answer to `postback_url`
+        if question['postback_url']:
+            # serialize values inside the dictionary
+            postdata = {k: simplejson.dumps(v, default=http_additional_serialize).strip('"') for k, v in answer.iteritems()}
+            r = grequests.post(question['postback_url'], data=postdata)
+            grequests.send(r)
+
+    def _handle_command(self, message):
+        if message is None:
+            return
+
+        try:
+            if message['type'] == 'message':
+                self.xmpp.send_chat_message(message['to'], message['text'])
+            elif message['type'] == 'question':
+                additional_args = {k: v for k, v in message.iteritems() if k not in ('to', 'id', 'text')}
+                self.xmpp.send_question(message['to'], message['text'], message['id'], **additional_args)
+        except KeyError:
+            log.info('Ignoring unrecognized message')
+            pass  # silently ignore
+        print message
 
     def _handle_connection(self, request):
         # accept only HTTP POST
@@ -48,8 +85,8 @@ class HttpListener(Listener):
 
         postdata = self._get_postdata(request, headers)
 
-        # TODO: handle postdata
-        self.xmpp.send_question('viktorstiskala@abdoc.net', "test", "123")
+        # handle postdata
+        self._handle_command(postdata)
 
         request.send_reply(200, "OK", "OK")
 

@@ -1,5 +1,6 @@
 from gevent import Greenlet
 
+
 class Listener(Greenlet):
     def __init__(self, xmpp):
         Greenlet.__init__(self)
@@ -7,6 +8,10 @@ class Listener(Greenlet):
 
     def connected(self):
         """Function called after the Listener is connected to bot class and self.xmpp is initialised"""
+        pass
+
+    def stop_processing(self):
+        """Called on KeyboardInterrup or SystemExit"""
         pass
 
     def _run(self):

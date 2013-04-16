@@ -1,3 +1,8 @@
+from gevent import monkey
+import gevent
+
+monkey.patch_all()
+
 import collections
 import logging
 log = logging.getLogger(__name__)
@@ -16,6 +21,7 @@ class EventBot(XMPPBot):
 
     Available events:
     answer_received     triggered after the eventbot received answer to particular question
+    question_expired    triggered when the question timeouted
     """
     REDIS_CONFIG = {
         'host': 'localhost',
@@ -25,7 +31,7 @@ class EventBot(XMPPBot):
 
     def __init__(self, jid, password, redis_config=None):
         super(EventBot, self).__init__(jid, password)
-        self._events = collections.defaultdict(AsyncResult)
+        self._events = collections.defaultdict(list)
 
         # Redis init
         if redis_config is not None:
@@ -43,7 +49,7 @@ class EventBot(XMPPBot):
         Register callback according to event name.
         Intended mainly for use by listeners
         """
-        self._events[event].rawlink(callback)
+        self._events[event].append(callback)
 
     def send_question(self, to, text, question_id, timeout=0, **kwargs):
         question = {
@@ -60,8 +66,12 @@ class EventBot(XMPPBot):
         # send question to the user
         self.send_chat_message(to, text)
 
+    def stop_processing(self):
+        self.stop.set()
+
     def _trigger_event(self, event_name, data):
-        self._events[event_name].set(data)
+        for callback in self._events[event_name]:
+            gevent.spawn(callback, data)  # spawn another greenlet to execute callback (do not care about result)
 
     def _remove_question(self, question):
         """Removes question from redis"""
@@ -70,7 +80,7 @@ class EventBot(XMPPBot):
             del self._questions[question['to']]
 
     def _handle_expired_question(self, question):
-        # TODO: event: expired question
+        self._trigger_event('question_expired', question)
         self._remove_question(question)
 
     def _message_received(self, msg):
@@ -89,11 +99,17 @@ class EventBot(XMPPBot):
                         if 'confirm_text' in question:
                             msg.reply(question['confirm_text']).send()
 
-                        # TODO: build answer
+                        # build answer
                         answer = {
-                            'from': msg['from']
+                            'type': 'answer',
+                            'id': question_id,
+                            'from': msg['from'].full,
+                            'answered_after': datetime.now() - question['sent'],
+                            'text': msg['body'],
+                            'msg_thread': msg['id']
                         }
-                        self._trigger_event('answer_received', answer)
+                        print "answer received"
+                        self._trigger_event('answer_received', (question, answer))
                         self._remove_question(question)
         else:
             super(EventBot, self)._message_received(msg)
