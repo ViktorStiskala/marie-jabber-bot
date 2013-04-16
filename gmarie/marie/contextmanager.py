@@ -1,4 +1,6 @@
 import gevent
+import logging
+log = logging.getLogger(__name__)
 
 
 class GeventJoinallManager(object):
@@ -18,4 +20,5 @@ class GeventJoinallManager(object):
             gevent.joinall(self._greenlets)
         except KeyboardInterrupt:
             # stop all running listeners
+            log.info('Shutting down')
             map(lambda self: self.stop_processing(), self._greenlets)

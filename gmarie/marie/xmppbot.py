@@ -6,15 +6,21 @@ import logging
 log = logging.getLogger(__name__)
 
 import gevent
-from gevent import Greenlet, GreenletExit
+from gevent import Greenlet
 from functools import wraps
 from sleekxmpp import ClientXMPP
 from sleekxmpp.exceptions import IqError, IqTimeout
-from args_parser import SepArgsParser, DummyArgsParser
+from args_parser import SepArgsParser
 
 
-def bot_command(async=False, args_parser=SepArgsParser()):
-    def _bot_command(func):
+def bot_command(f=None, async=False, args_parser=SepArgsParser()):
+    """
+    Bot command decorator.
+    
+    Never use `f` argument directly, used only for @bot_command decorator
+    If async is set, the command is run in separated Greenlet
+    """
+    def _decorator(func):
         setattr(func, '_bot_command', True)
         setattr(func, '_bot_argsparser', args_parser)
         setattr(func, '_bot_async', async)
@@ -22,7 +28,11 @@ def bot_command(async=False, args_parser=SepArgsParser()):
         def _wrapper(*args, **kwargs):
             return func(*args, **kwargs)
         return wraps(func)(_wrapper)
-    return _bot_command
+
+    # enable decorator usage both as @bot_command and @bot_command()
+    if f is not None:
+        return _decorator(f)
+    return _decorator
 
 
 class XMPPBot(ClientXMPP, Greenlet):
@@ -33,20 +43,9 @@ class XMPPBot(ClientXMPP, Greenlet):
         self._cmd_prefix = command_prefix
         self._chat_cmd_prefix = chat_command_prefix
 
+        # register event handlers
         self.add_event_handler("session_start", self.session_start)
         self.add_event_handler("message", self._message_received)
-
-        # If you wanted more functionality, here's how to register plugins:
-        # self.register_plugin('xep_0030') # Service Discovery
-        # self.register_plugin('xep_0199') # XMPP Ping
-
-        # Here's how to access plugins once you've registered them:
-        # self['xep_0030'].add_feature('echo_demo')
-
-        # If you are working with an OpenFire server, you will
-        # need to use a different SSL version:
-        # import ssl
-        # self.ssl_version = ssl.PROTOCOL_SSLv3
 
     def send_chat_message(self, to, text):
         return self.send_message(to, mbody=text, mtype='chat')
@@ -66,8 +65,6 @@ class XMPPBot(ClientXMPP, Greenlet):
     def _process_command(self, command, params, msg):
         """
         Processes command send by the user, handles async response.
-
-        If async is set, the command is run in separated Greenlet
         """
         method = getattr(self, command)
 
