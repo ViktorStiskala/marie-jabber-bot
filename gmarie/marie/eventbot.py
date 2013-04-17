@@ -73,10 +73,7 @@ class EventBot(XMPPBot):
         }
         question.update(**kwargs)
 
-        print self._questions
         self._questions.setdefault(to, {})[question_id] = question
-        self._redis.api.save()
-        print self._questions
 
         # only_if_status checking
         try:
