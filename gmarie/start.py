@@ -12,7 +12,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(levelname)-8s %(message)s')
 
     with marie.serve_forever() as m:
-        bot = EventBot('marie@abdoc.net', 'ozXM8vkCVy3vyOmPjqRl')
+        bot = EventBot('marie.example@jabber.cz', 'g9ihyx95pHrgpgssFN2d')
         m.start(bot)
 
         listener = HttpListener(bot, 8088)

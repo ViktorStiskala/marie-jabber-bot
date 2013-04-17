@@ -13,17 +13,17 @@ from sleekxmpp.exceptions import IqError, IqTimeout
 from args_parser import SepArgsParser
 
 
-def bot_command(f=None, async=False, args_parser=SepArgsParser()):
+def bot_command(f=None, block=False, args_parser=SepArgsParser()):
     """
     Bot command decorator.
-    
+
     Never use `f` argument directly, used only for @bot_command decorator
     If async is set, the command is run in separated Greenlet
     """
     def _decorator(func):
         setattr(func, '_bot_command', True)
         setattr(func, '_bot_argsparser', args_parser)
-        setattr(func, '_bot_async', async)
+        setattr(func, '_bot_async', not block)
 
         def _wrapper(*args, **kwargs):
             return func(*args, **kwargs)
@@ -42,12 +42,18 @@ class XMPPBot(ClientXMPP, Greenlet):
 
         self._cmd_prefix = command_prefix
         self._chat_cmd_prefix = chat_command_prefix
+        self._authorization_sent = set()
+
+        # automatically authorize user after sending subscription request
+        self.auto_authorize = True
 
         # register event handlers
-        self.add_event_handler("session_start", self.session_start)
-        self.add_event_handler("message", self._message_received)
+        self.add_event_handler('session_start', self.session_start)
+        self.add_event_handler('message', self._message_received)
 
-    def send_chat_message(self, to, text):
+    def send_chat_message(self, to, text, authorize_user=True):
+        if authorize_user:
+            self._authorize_user(to)  # make sure the subscription is already established
         return self.send_message(to, mbody=text, mtype='chat')
 
     def session_start(self, event):
@@ -62,6 +68,37 @@ class XMPPBot(ClientXMPP, Greenlet):
             logging.error("Server did not responded in time")
             self.disconnect()
 
+    def _authorize_user(self, jid):
+        """
+        Authorize user specified by jid.
+
+        If the authorization request was already sent, but not in actual session then the authorization request
+        will be re-sent.
+        """
+        try:
+            subscription = self.client_roster[jid]
+            if subscription['subscription'] != 'both':
+                # if the subscription is pending and the request wasn't sent in actual session
+                # then re-send the authorization request
+                if subscription['pending_out']:
+                    if jid not in self._authorization_sent:  # request wasn't sent in actual session
+                        self._rerequest_authorization(jid)
+
+                        # make sure that the authorization request is not sent more than once in current session
+                        self._authorization_sent.add(jid)
+                else:
+                    self.send_presence(pto=jid, ptype='subscribe')
+        except KeyError:  # user is not present in roster
+            self.send_presence(pto=jid, ptype='subscribe')
+
+    def _rerequest_authorization(self, jid):
+        """
+        Re-send authorization request.
+        """
+        self.send_presence(pto=jid, ptype='unsubscribe')
+        gevent.sleep(0.2)
+        self.send_presence(pto=jid, ptype='subscribe')
+
     def _process_command(self, command, params, msg):
         """
         Processes command send by the user, handles async response.
@@ -75,12 +112,16 @@ class XMPPBot(ClientXMPP, Greenlet):
             if output is not None:
                 msg.reply(output).send()
 
+        # spawn new Greenlet when not running in blocking mode
         if method._bot_async:
             gevent.spawn(_run_command, params, msg)
         else:
             _run_command(params, msg)
 
     def _message_received(self, msg):
+        """
+        Handles messages received from user.
+        """
         if msg['type'] in ('chat', 'normal', 'groupchat'):
             try:
                 prefix = self._chat_cmd_prefix if msg['type'] == 'groupchat' else self._cmd_prefix
@@ -99,7 +140,12 @@ class XMPPBot(ClientXMPP, Greenlet):
 
     @bot_command
     def test(self, *args):
+        gevent.sleep(5)
         return "Successfully run test command"
+
+    @bot_command
+    def chat(self, *args):
+        return "test"
 
     def _run(self):
         self.connect()
