@@ -42,21 +42,36 @@ class XMPPBot(ClientXMPP, Greenlet):
 
         self._cmd_prefix = command_prefix
         self._chat_cmd_prefix = chat_command_prefix
-        self._authorization_sent = set()
+        self._authorization_sent = set()  # set of jids for which the auth request was already sent in this session
+        self.user_status_presence = {}  # dict of last status presence received from user
 
         # automatically authorize user after sending subscription request
         self.auto_authorize = True
 
         # register event handlers
-        self.add_event_handler('session_start', self.session_start)
+        self.add_event_handler('session_start', self._session_start)
         self.add_event_handler('message', self._message_received)
+        self.add_event_handler('changed_status', self._user_status_changed)
 
     def send_chat_message(self, to, text, authorize_user=True):
         if authorize_user:
             self._authorize_user(to)  # make sure the subscription is already established
         return self.send_message(to, mbody=text, mtype='chat')
 
-    def session_start(self, event):
+    def get_user_status(self, jid):
+        """
+        Get last user status received from user.
+
+        Doesn't issue server call
+        """
+        try:
+            return self.user_status_presence[jid].get_type()
+        except KeyError:
+            pass
+
+        return None
+
+    def _session_start(self, event):
         self.send_presence()
         try:
             self.get_roster()
@@ -67,6 +82,9 @@ class XMPPBot(ClientXMPP, Greenlet):
         except IqTimeout:
             logging.error("Server did not responded in time")
             self.disconnect()
+
+    def _user_status_changed(self, presence):
+        self.user_status_presence[presence['from'].bare] = presence
 
     def _authorize_user(self, jid):
         """
@@ -137,15 +155,6 @@ class XMPPBot(ClientXMPP, Greenlet):
                         return self._process_command(command, method._bot_argsparser.parse_args(params), msg)
             except AttributeError:
                 pass
-
-    @bot_command
-    def test(self, *args):
-        gevent.sleep(5)
-        return "Successfully run test command"
-
-    @bot_command
-    def chat(self, *args):
-        return "test"
 
     def _run(self):
         self.connect()

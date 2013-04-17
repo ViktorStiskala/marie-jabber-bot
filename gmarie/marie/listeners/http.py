@@ -34,9 +34,12 @@ class HttpListener(Listener):
 
         if headers.get('content-type') == 'application/x-www-form-urlencoded':
             qs = parse_qsl(data)
-            postdata = {}  # convert to dict
+            postdata = {}
             for k, v in qs:
-                postdata[k] = v
+                try:  # try to decode postdata
+                    postdata[k] = simplejson.loads(v)
+                except JSONDecodeError:
+                    postdata[k] = v
         else:
             try:
                 postdata = simplejson.loads(data)
@@ -47,7 +50,6 @@ class HttpListener(Listener):
 
     def answer_received(self, data):
         question, answer = data
-        print "trigger"
 
         # send answer to `postback_url`
         if question['postback_url']:
@@ -69,7 +71,6 @@ class HttpListener(Listener):
         except KeyError:
             log.info('Ignoring unrecognized message')
             pass  # silently ignore
-        print message
 
     def _handle_connection(self, request):
         # accept only HTTP POST
