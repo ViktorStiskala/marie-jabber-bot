@@ -121,10 +121,10 @@ class EventBot(XMPPBot):
             output = ""
             num = 1
             for question_id, question in _questions.items():
-                output += "[%d] %s\n" % (num, question['text'])
+                output += u"[%d] %s\n" % (num, question['text'])
                 num += 1
 
-            return output.rtrim('\n')
+            return output
 
         choice_table += _generate_list(questions)
         msg.reply(choice_table).send()

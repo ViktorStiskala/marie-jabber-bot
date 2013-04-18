@@ -36,6 +36,11 @@ class HttpListener(Listener):
             qs = parse_qsl(data)
             postdata = {}
             for k, v in qs:
+                if isinstance(v, basestring):
+                    try:
+                        v = unicode(v)
+                    except UnicodeDecodeError:
+                        pass
                 try:  # try to decode postdata
                     postdata[k] = simplejson.loads(v)
                 except JSONDecodeError:
