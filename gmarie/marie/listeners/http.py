@@ -4,7 +4,6 @@ monkey.patch_all()
 from datetime import timedelta
 from gevent import http, Greenlet, GreenletExit
 from urlparse import parse_qsl
-import gevent
 import grequests
 from marie.listeners import Listener
 import simplejson
@@ -15,9 +14,10 @@ log = logging.getLogger(__name__)
 
 
 def http_additional_serialize(value):
+    # convert timedelta to seconds
     if isinstance(value, timedelta):
         return value.total_seconds()
-    raise TypeError("Unsupported value")
+    return value
 
 
 class HttpListener(Listener):
@@ -36,6 +36,11 @@ class HttpListener(Listener):
             qs = parse_qsl(data)
             postdata = {}
             for k, v in qs:
+                if isinstance(v, basestring):
+                    try:
+                        v = unicode(v)
+                    except UnicodeDecodeError:
+                        pass
                 try:  # try to decode postdata
                     postdata[k] = simplejson.loads(v)
                 except JSONDecodeError:
@@ -52,11 +57,14 @@ class HttpListener(Listener):
         question, answer = data
 
         # send answer to `postback_url`
-        if question['postback_url']:
-            # serialize values inside the dictionary
-            postdata = {k: simplejson.dumps(v, default=http_additional_serialize).strip('"') for k, v in answer.iteritems()}
-            r = grequests.post(question['postback_url'], data=postdata)
-            grequests.send(r)
+        try:
+            if question['postback_url']:
+                # serialize values inside the dictionary
+                postdata = {k: http_additional_serialize(v) for k, v in answer.iteritems()}
+                r = grequests.post(question['postback_url'], data=postdata)
+                grequests.send(r)
+        except KeyError:
+            pass
 
     def _handle_command(self, message):
         if message is None:
