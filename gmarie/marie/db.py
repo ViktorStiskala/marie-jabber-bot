@@ -13,6 +13,8 @@ def default_handler(obj):
 
 class DataStorage(object):
     _instance = None
+    ANSWER_KEY = '__answers'
+    MAPPING_KEY = '__question_mapping'
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
@@ -53,3 +55,22 @@ class DataStorage(object):
 
     def delete_questions(self, jid, *question_ids):
         self._connection.hdel(jid, *question_ids)
+
+    def save_answer(self, jid, answer):
+        self._connection.hset(name=self.ANSWER_KEY, key=jid, value=answer)
+
+    def load_answer(self, jid):
+        return self._connection.hget(name=self.ANSWER_KEY, key=jid)
+
+    def delete_answer(self, jid):
+        self._connection.hdel(self.ANSWER_KEY, jid)
+
+    def set_questions_mapping(self, jid, mapping):
+        encoded_mapping = simplejson.dumps(mapping)
+        self._connection.hset(self.MAPPING_KEY, jid, encoded_mapping)
+
+    def get_question_mapping(self, jid):
+        data = self._connection.hget(self.MAPPING_KEY, jid)
+        if data is None:
+            return {}
+        return simplejson.loads(data)

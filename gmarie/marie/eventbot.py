@@ -106,20 +106,66 @@ class EventBot(XMPPBot):
         self._trigger_event('question_expired', question)
         self._remove_question(question)
 
-    def _handle_multiple_questions(self, msg, questions):
-        choice_table = "To which question are you answering?\n"
+    def _handle_multiple_questions(self, jid, msg, questions):
+        choice_table = "To which question are you answering?"
+        answer = self._storage.load_answer(jid)
 
-        # def _generate_list(_questions):
-        #     output = ""
-        #     num = 1
-        #     for question_id, question in _questions.items():
-        #         output += u"[%d] %s\n" % (num, question['text'])
-        #         num += 1
-        #
-        #     return output
-        #
-        # choice_table += _generate_list(questions)
+        # choices were already displayed
+        if answer:
+            mapping = self._storage.get_question_mapping(jid)
+            try:
+                question_number = msg['body']
+                question_id = mapping[question_number]
+
+                saved_answer_text = self._storage.load_answer(jid)
+                self._storage.delete_answer(jid)
+                msg['body'] = unicode(saved_answer_text, encoding='utf-8')
+
+                return self._handle_answer(question_id, questions[question_id], msg)
+            except (KeyError, ValueError):
+                if mapping is not None:
+                    choice_table = 'Wrong number received\n\n' + choice_table
+        else:
+            self._storage.save_answer(jid, msg['body'])
+
+        # save question mapping
+        mapping = {}
+        num = 1
+
+        for question_id in questions.keys():
+            mapping[num] = question_id
+            num += 1
+
+        # save mapping to database
+        self._storage.set_questions_mapping(jid, mapping)
+
+        def _generate_list(_mapping):
+            output = ""
+            for number, question_id in sorted(_mapping.items()):
+                output += u"\n[%d] %s [%s]" % (number, questions[question_id]['text'], question_id)
+
+            return output
+
+        choice_table += _generate_list(mapping)
         msg.reply(choice_table).send()
+
+    def _handle_answer(self, question_id, question, msg):
+        # reply with confirm_text if present
+        if 'confirm_text' in question:
+            msg.reply(question['confirm_text']).send()
+
+        # build answer
+        answer = {
+            'type': 'answer',
+            'id': question_id,
+            'from': msg['from'].full,
+            'answered_after': datetime.now() - question['sent'],
+            'text': msg['body'],
+            'msg_thread': msg['id']
+        }
+
+        self._trigger_event('answer_received', (question, answer))
+        self._remove_question(question)
 
     def _message_received(self, msg):
         # handle question answers
@@ -128,34 +174,17 @@ class EventBot(XMPPBot):
             questions = self._storage.get_questions(jid)
 
             if questions:
-                # TODO: handle more than one question (prompt)
-                if len(questions) > 1:
-                    return self._handle_multiple_questions(msg, questions)
-
                 for question_id, question in questions.items():
                     # handle expired questions
                     if question['expires'] is not None and question['expires'] < datetime.now():
                         self._handle_expired_question(question)
                         continue
 
-                    # reply with confirm_text if present
-                    if 'confirm_text' in question:
-                        msg.reply(question['confirm_text']).send()
-
-                    # build answer
-                    answer = {
-                        'type': 'answer',
-                        'id': question_id,
-                        'from': msg['from'].full,
-                        'answered_after': datetime.now() - question['sent'],
-                        'text': msg['body'],
-                        'msg_thread': msg['id']
-                    }
-
-                    self._trigger_event('answer_received', (question, answer))
-                    self._remove_question(question)
-
-                    # break after first answer
-                    break
-        else:
-            super(EventBot, self)._message_received(msg)
+                if len(questions) > 1:
+                    return self._handle_multiple_questions(jid, msg, questions)
+                else:
+                    # only one question present - handle answer
+                    question_id, question = questions.items()[0]
+                    self._handle_answer(question_id, question, msg)
+            else:
+                super(EventBot, self)._message_received(msg)

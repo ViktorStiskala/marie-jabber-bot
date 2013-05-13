@@ -56,6 +56,8 @@ class HttpListener(Listener):
     def answer_received(self, data):
         question, answer = data
 
+        log.debug('Answer received: %s' % repr(answer))
+
         # send answer to `postback_url`
         try:
             if question['postback_url']:
