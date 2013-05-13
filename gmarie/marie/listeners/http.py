@@ -1,3 +1,4 @@
+import re
 from gevent import monkey
 monkey.patch_all()
 
@@ -11,6 +12,16 @@ from simplejson.decoder import JSONDecodeError
 
 import logging
 log = logging.getLogger(__name__)
+
+
+class MethodNotAllowed(Exception):
+    def __init__(self, allowed_methods, *args, **kwargs):
+        self.allowed_methods = allowed_methods
+        super(MethodNotAllowed, self).__init__(*args, **kwargs)
+
+
+class BadRequestError(Exception):
+    pass
 
 
 def http_additional_serialize(value):
@@ -68,27 +79,28 @@ class HttpListener(Listener):
         except KeyError:
             pass
 
-    def _handle_command(self, message, uri):
-        if message is None:
-            return
+    def _check_allowed_method(self, request, allow):
+        if request.typestr != allow.upper():
+            raise MethodNotAllowed(allow.upper())
 
+    def _handle_command(self, data, request):
         try:
-            if uri == '/message/':
-                self.xmpp.send_chat_message(message['to'], message['text'])
-            elif uri == '/question/':
-                additional_args = {k: v for k, v in message.iteritems() if k not in ('to', 'id', 'text')}
-                self.xmpp.send_question(message['to'], message['text'], message['id'], **additional_args)
+            if re.match(r'^/message/.*', request.uri):
+                self._check_allowed_method(request, 'POST')
+
+                return self.xmpp.send_chat_message(data['to'], data['text'])
+            elif re.match(r'^/question/.*', request.uri):
+                self._check_allowed_method(request, 'POST')
+
+                additional_args = {k: v for k, v in data.iteritems() if k not in ('to', 'id', 'text')}
+                return self.xmpp.send_question(data['to'], data['text'], data['id'], **additional_args)
         except KeyError:
             log.info('Ignoring unrecognized message')
             pass  # silently ignore
 
-    def _handle_connection(self, request):
-        # accept only HTTP POST
-        if request.typestr != 'POST':
-            request.add_output_header('Allow', 'POST')
-            request.add_output_header('Content-Type', 'text/html')
-            return request.send_reply(405, 'Method Not Allowed', '<h1>HTTP 405 - Method not allowed</h1>')
+        raise BadRequestError("Uncrecognized command")
 
+    def _handle_connection(self, request):
         # convert headers to dict (throws out headers with same name)
         headers = {}
         for k, v in request.get_input_headers():
@@ -97,7 +109,15 @@ class HttpListener(Listener):
         postdata = self._get_postdata(request, headers)
 
         # handle postdata
-        self._handle_command(postdata, request.uri)
+        try:
+            self._handle_command(postdata, request)
+        except MethodNotAllowed as e:
+            request.add_output_header('Allow', e.allowed_methods)
+            request.add_output_header('Content-Type', 'text/html')
+            return request.send_reply(405, 'Method Not Allowed', '<h1>HTTP 405 - Method not allowed</h1>')
+        except BadRequestError:
+            request.add_output_header('Content-Type', 'text/html')
+            return request.send_reply(400, 'Bad Request', '<h1>HTTP 400 - Bad Request</h1>')
 
         request.send_reply(200, "OK", "OK")
 
