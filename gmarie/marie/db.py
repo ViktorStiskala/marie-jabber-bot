@@ -5,6 +5,7 @@ import redis
 
 
 def default_handler(obj):
+    """Serialization handler with datetime addon"""
     if hasattr(obj, 'isoformat'):
         return obj.isoformat()
     else:
@@ -42,6 +43,7 @@ class DataStorage(object):
         return data
 
     def get_questions(self, jid):
+        """Loads and deserializes all questions from database for the specified JID"""
         data = self._connection.hgetall(jid)
         try:
             return {k: self._decode_json(v) for k, v in data.items()}
@@ -50,26 +52,40 @@ class DataStorage(object):
             return {}
 
     def set_question(self, jid, question_id, data):
+        """Adds new question to database"""
         encoded_data = simplejson.dumps(data, default=default_handler)
         self._connection.hset(jid, question_id, encoded_data)
 
     def delete_questions(self, jid, *question_ids):
+        """Deletes saved questions identified by questions_ids"""
         self._connection.hdel(jid, *question_ids)
 
     def save_answer(self, jid, answer):
+        """Temporary storage for answer text when the multiple question dialog is displayed"""
         self._connection.hset(name=self.ANSWER_KEY, key=jid, value=answer)
 
     def load_answer(self, jid):
+        """Loads saved answer text"""
         return self._connection.hget(name=self.ANSWER_KEY, key=jid)
 
     def delete_answer(self, jid):
+        """Deletes answer text"""
         self._connection.hdel(self.ANSWER_KEY, jid)
 
     def set_questions_mapping(self, jid, mapping):
+        """
+        Sets questions mapping used for multiple question dialog.
+
+        Mapping is in the format of number: question_id.
+        Example: {'1': 'test_question_id', '2': 'second_question'}
+        """
+
         encoded_mapping = simplejson.dumps(mapping)
         self._connection.hset(self.MAPPING_KEY, jid, encoded_mapping)
 
     def get_question_mapping(self, jid):
+        """Loads questions mapping used for multiple question dialog"""
+
         data = self._connection.hget(self.MAPPING_KEY, jid)
         if data is None:
             return {}

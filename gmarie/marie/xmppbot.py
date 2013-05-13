@@ -140,7 +140,9 @@ class XMPPBot(ClientXMPP, Greenlet):
         """
         Handles messages received from user.
         """
-        # TODO: handle messages without type argument as type 'normal' (XMPP specification)
+        if msg['type'] is None:
+            msg['type'] = 'normal'
+
         if msg['type'] in ('chat', 'normal', 'groupchat'):
             try:
                 prefix = self._chat_cmd_prefix if msg['type'] == 'groupchat' else self._cmd_prefix
@@ -158,8 +160,24 @@ class XMPPBot(ClientXMPP, Greenlet):
                 pass
 
     @bot_command
-    def connected_users(self, *args):
-        return repr(self.client_roster)
+    def user_status(self, users):
+        if not users:
+            return "No arguments specified. Please specify at least one JID"
+
+        output = ""
+        for user in users:
+            status = self.get_user_status(user)
+            if not status:
+                return "Unknown or not authenticated user: %s" % user
+            output += "%s: %s\n" % (user, status)
+
+        return output.rstrip('\n')
+
+    @bot_command
+    def users_in_roster(self, *args):
+        roster_dict = dict(self.client_roster)
+        users_with_any_subscription = filter(lambda x: x[1]['subscription'] != 'none', roster_dict.items())
+        return "\n".join(dict(users_with_any_subscription).keys())
 
     # TODO: privileged users
     # TODO: chat room logging

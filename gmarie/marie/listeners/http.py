@@ -68,14 +68,14 @@ class HttpListener(Listener):
         except KeyError:
             pass
 
-    def _handle_command(self, message):
+    def _handle_command(self, message, uri):
         if message is None:
             return
 
         try:
-            if message['type'] == 'message':
+            if uri == '/message/':
                 self.xmpp.send_chat_message(message['to'], message['text'])
-            elif message['type'] == 'question':
+            elif uri == '/question/':
                 additional_args = {k: v for k, v in message.iteritems() if k not in ('to', 'id', 'text')}
                 self.xmpp.send_question(message['to'], message['text'], message['id'], **additional_args)
         except KeyError:
@@ -97,7 +97,7 @@ class HttpListener(Listener):
         postdata = self._get_postdata(request, headers)
 
         # handle postdata
-        self._handle_command(postdata)
+        self._handle_command(postdata, request.uri)
 
         request.send_reply(200, "OK", "OK")
 
