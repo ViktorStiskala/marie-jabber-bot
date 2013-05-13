@@ -1,5 +1,14 @@
+from datetime import datetime
 import simplejson
+from simplejson.scanner import JSONDecodeError
 import redis
+
+
+def default_handler(obj):
+    if hasattr(obj, 'isoformat'):
+        return obj.isoformat()
+    else:
+        raise TypeError('Object of type %s with value of %s is not JSON serializable' % (type(obj), repr(obj)))
 
 
 class DataStorage(object):
@@ -10,19 +19,37 @@ class DataStorage(object):
             cls._instance = super(DataStorage, cls).__new__(cls, *args, **kwargs)
         return cls._instance
 
-    def __init__(self):
-        self._connection = redis.StrictRedis(host='localhost', port=6379, db=0)
+    def __init__(self, host='localhost', port=6379, db=0):
+        self._connection = redis.StrictRedis(host, port, db)
+
+    def _decode_json(self, value):
+        """JSON decode function with additional datetime parsing"""
+        data = simplejson.loads(value)
+
+        def decode_datetime(date_string):
+            try:
+                v = datetime.strptime(date_string, '%Y-%m-%dT%H:%M:%S.%f')
+                return v
+            except ValueError:
+                return date_string
+
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, basestring):
+                    data[k] = decode_datetime(v)
+        return data
 
     def get_questions(self, jid):
-        pass
+        data = self._connection.hgetall(jid)
+        try:
+            return {k: self._decode_json(v) for k, v in data.items()}
+        except JSONDecodeError:
+            self._connection.delete(jid)
+            return {}
 
     def set_question(self, jid, question_id, data):
-        encoded_data = simplejson.dumps(data)
+        encoded_data = simplejson.dumps(data, default=default_handler)
         self._connection.hset(jid, question_id, encoded_data)
 
-    def test(self):
-        print "test"
-        self._connection.hset('viktorstiskala@abdoc.net', 'kfdjkfjdkfjskj', 'data')
-        self._connection.hset('viktorstiskala@abdoc.net', 'test2', 'data')
-
-        print self._connection.hgetall('viktorstiskala@abdoc.net')
+    def delete_questions(self, jid, *question_ids):
+        self._connection.hdel(jid, *question_ids)

@@ -140,6 +140,7 @@ class XMPPBot(ClientXMPP, Greenlet):
         """
         Handles messages received from user.
         """
+        # TODO: handle messages without type argument as type 'normal' (XMPP specification)
         if msg['type'] in ('chat', 'normal', 'groupchat'):
             try:
                 prefix = self._chat_cmd_prefix if msg['type'] == 'groupchat' else self._cmd_prefix
@@ -155,6 +156,17 @@ class XMPPBot(ClientXMPP, Greenlet):
                         return self._process_command(command, method._bot_argsparser.parse_args(params), msg)
             except AttributeError:
                 pass
+
+    @bot_command
+    def connected_users(self, *args):
+        return repr(self.client_roster)
+
+    # TODO: privileged users
+    # TODO: chat room logging
+
+    @bot_command
+    def chat(self, *args):
+        return "Chat method result"
 
     def _run(self):
         self.connect()

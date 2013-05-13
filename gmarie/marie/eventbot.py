@@ -12,6 +12,7 @@ from redish import serialization
 from redish.client import Client
 
 from xmppbot import XMPPBot, bot_command
+from db import DataStorage
 
 
 class EventBot(XMPPBot):
@@ -35,14 +36,7 @@ class EventBot(XMPPBot):
         # Redis init
         if redis_config is not None:
             self.REDIS_CONFIG.update(redis_config)
-        self._redis = Client(serializer=serialization.JSON(), **self.REDIS_CONFIG)
-
-        QUESTIONS_KEY = __name__ + "__questions"
-        try:
-            self._questions = self._redis[QUESTIONS_KEY]
-        except KeyError:
-            self._redis[QUESTIONS_KEY] = {}
-            self._questions = self._redis[QUESTIONS_KEY]
+        self._storage = DataStorage(**self.REDIS_CONFIG)
 
         self.add_event_handler('got_offline', self._user_got_offline)
 
@@ -73,7 +67,7 @@ class EventBot(XMPPBot):
         }
         question.update(**kwargs)
 
-        self._questions.setdefault(to, {})[question_id] = question
+        self._storage.set_question(jid=to, question_id=question_id, data=question)
 
         # only_if_status checking
         try:
@@ -95,20 +89,18 @@ class EventBot(XMPPBot):
 
     def _user_got_offline(self, presence):
         # expire all questions which has `expire_on_offline` set to True
-        for question_to, questions_dict in self._questions.items():
-            if presence['from'].bare == question_to:
-                for question_id, question in questions_dict.items():
-                    try:
-                        if question['expire_on_offline']:
-                            self._handle_expired_question(question)
-                    except KeyError:
-                        pass
+        jid = presence['from'].bare
+        questions = self._storage.get_questions(jid)
+        for question_id, question in questions.items():
+            try:
+                if question['expire_on_offline']:
+                    self._handle_expired_question(question)
+            except KeyError:
+                pass
 
     def _remove_question(self, question):
         """Removes question from redis"""
-        del self._questions[question['to']][question['id']]
-        if not self._questions[question['to']]:
-            del self._questions[question['to']]
+        self._storage.delete_questions(question['to'], question['id'])
 
     def _handle_expired_question(self, question):
         self._trigger_event('question_expired', question)
@@ -117,51 +109,53 @@ class EventBot(XMPPBot):
     def _handle_multiple_questions(self, msg, questions):
         choice_table = "To which question are you answering?\n"
 
-        def _generate_list(_questions):
-            output = ""
-            num = 1
-            for question_id, question in _questions.items():
-                output += u"[%d] %s\n" % (num, question['text'])
-                num += 1
-
-            return output
-
-        choice_table += _generate_list(questions)
+        # def _generate_list(_questions):
+        #     output = ""
+        #     num = 1
+        #     for question_id, question in _questions.items():
+        #         output += u"[%d] %s\n" % (num, question['text'])
+        #         num += 1
+        #
+        #     return output
+        #
+        # choice_table += _generate_list(questions)
         msg.reply(choice_table).send()
 
     def _message_received(self, msg):
         # handle question answers
-        if msg['type'] in ('chat', 'normal') and self._questions:
-            for question_to, questions_dict in self._questions.items():  # do not use iteritems -> we need local copy
-                if msg['from'].bare == question_to:
-                    # TODO: handle more than one question (prompt)
-                    if len(questions_dict) > 1:
-                        return self._handle_multiple_questions(msg, questions_dict)
+        if msg['type'] in ('chat', 'normal'):
+            jid = msg['from'].bare
+            questions = self._storage.get_questions(jid)
 
-                    for question_id, question in questions_dict.items():
-                        # handle expired questions
-                        if question['expires'] is not None and question['expires'] < datetime.now():
-                            self._handle_expired_question(question)
-                            continue
+            if questions:
+                # TODO: handle more than one question (prompt)
+                if len(questions) > 1:
+                    return self._handle_multiple_questions(msg, questions)
 
-                        # reply with confirm_text if present
-                        if 'confirm_text' in question:
-                            msg.reply(question['confirm_text']).send()
+                for question_id, question in questions.items():
+                    # handle expired questions
+                    if question['expires'] is not None and question['expires'] < datetime.now():
+                        self._handle_expired_question(question)
+                        continue
 
-                        # build answer
-                        answer = {
-                            'type': 'answer',
-                            'id': question_id,
-                            'from': msg['from'].full,
-                            'answered_after': datetime.now() - question['sent'],
-                            'text': msg['body'],
-                            'msg_thread': msg['id']
-                        }
+                    # reply with confirm_text if present
+                    if 'confirm_text' in question:
+                        msg.reply(question['confirm_text']).send()
 
-                        self._trigger_event('answer_received', (question, answer))
-                        self._remove_question(question)
+                    # build answer
+                    answer = {
+                        'type': 'answer',
+                        'id': question_id,
+                        'from': msg['from'].full,
+                        'answered_after': datetime.now() - question['sent'],
+                        'text': msg['body'],
+                        'msg_thread': msg['id']
+                    }
 
-                        # break after first answer
-                        break
+                    self._trigger_event('answer_received', (question, answer))
+                    self._remove_question(question)
+
+                    # break after first answer
+                    break
         else:
             super(EventBot, self)._message_received(msg)
