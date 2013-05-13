@@ -85,18 +85,18 @@ class HttpListener(Listener):
 
     def _handle_command(self, data, request):
         try:
-            if re.match(r'^/message/.*', request.uri):
+            if re.match(r'^/message/.*', request.uri):  # message
                 self._check_allowed_method(request, 'POST')
 
                 return self.xmpp.send_chat_message(data['to'], data['text'])
-            elif re.match(r'^/question/.*', request.uri):
+            elif re.match(r'^/question/.*', request.uri):  # question
                 self._check_allowed_method(request, 'POST')
 
                 additional_args = {k: v for k, v in data.iteritems() if k not in ('to', 'id', 'text')}
                 return self.xmpp.send_question(data['to'], data['text'], data['id'], **additional_args)
         except KeyError:
             log.info('Ignoring unrecognized message')
-            pass  # silently ignore
+            raise BadRequestError("Data missing needed attributes")
 
         raise BadRequestError("Uncrecognized command")
 
@@ -114,10 +114,10 @@ class HttpListener(Listener):
         except MethodNotAllowed as e:
             request.add_output_header('Allow', e.allowed_methods)
             request.add_output_header('Content-Type', 'text/html')
-            return request.send_reply(405, 'Method Not Allowed', '<h1>HTTP 405 - Method not allowed</h1>')
-        except BadRequestError:
+            return request.send_reply(405, 'Method Not Allowed', '<h1>Error: Method not allowed</h1>')
+        except BadRequestError as e:
             request.add_output_header('Content-Type', 'text/html')
-            return request.send_reply(400, 'Bad Request', '<h1>HTTP 400 - Bad Request</h1>')
+            return request.send_reply(400, 'Bad Request', '<h1>Error: Bad Request</h1>\n<p>%s</p>' % str(e))
 
         request.send_reply(200, "OK", "OK")
 
