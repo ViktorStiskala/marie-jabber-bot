@@ -186,5 +186,4 @@ class EventBot(XMPPBot):
                     # only one question present - handle answer
                     question_id, question = questions.items()[0]
                     self._handle_answer(question_id, question, msg)
-            else:
-                super(EventBot, self)._message_received(msg)
+        super(EventBot, self)._message_received(msg)
