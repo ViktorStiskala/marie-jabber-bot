@@ -44,6 +44,10 @@ class EventBot(XMPPBot):
         """
         Register callback according to event name.
         Intended mainly for use by listeners
+
+        answer_received
+        question_expired
+        groupchat_message_received
         """
         self._events[event].append(callback)
 
@@ -80,6 +84,9 @@ class EventBot(XMPPBot):
         # send question to the user
         self.send_chat_message(to, text)
 
+    def log_chatgroup(self, room, nick=None, password=None):
+        pass
+
     def stop_processing(self):
         self.stop.set()
 
@@ -101,6 +108,11 @@ class EventBot(XMPPBot):
     def _remove_question(self, question):
         """Removes question from redis"""
         self._storage.delete_questions(question['to'], question['id'])
+
+    @bot_command(name="reset_to_defaults", min_privilege='admin')
+    def _flush_storage(self):
+        self._storage.clear_database()
+        return "Database reset, please restart bot application"
 
     def _handle_expired_question(self, question):
         self._trigger_event('question_expired', question)
@@ -168,7 +180,11 @@ class EventBot(XMPPBot):
         self._remove_question(question)
 
     def _message_received(self, msg):
-        # handle question answers
+        # trigger event on received groupchat
+        if msg['type'] == 'groupchat':
+            self._trigger_event('groupchat_message_received', msg)
+
+        # handle answers
         if msg['type'] in ('chat', 'normal'):
             jid = msg['from'].bare
             questions = self._storage.get_questions(jid)

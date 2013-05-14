@@ -1,8 +1,9 @@
+from marie.db import DataStorage
 import re
 from gevent import monkey
 monkey.patch_all()
 
-from datetime import timedelta
+from datetime import timedelta, datetime
 from gevent import http, Greenlet, GreenletExit
 from urlparse import parse_qsl
 import grequests
@@ -28,6 +29,8 @@ def http_additional_serialize(value):
     # convert timedelta to seconds
     if isinstance(value, timedelta):
         return value.total_seconds()
+    if isinstance(value, datetime):
+        return value.isoformat()
     return value
 
 
@@ -36,8 +39,17 @@ class HttpListener(Listener):
         super(HttpListener, self).__init__(xmpp)
         self._port = port
         self._address = address
+        self._storage = DataStorage()
 
         self.xmpp.register_callback('answer_received', self.answer_received)
+        self.xmpp.register_callback('groupchat_message_received', self._handle_groupchat_message)
+        self.xmpp.add_event_handler('session_start', self._xmpp_session_started)
+
+    def _xmpp_session_started(self, event):
+        # join monitored rooms
+        for room, data in self._storage.get_chatrooms().items():
+            password = None if not data['password'] else data['password']
+            self.xmpp.join_chat_room(room, data['nickname'], password)
 
     def _get_postdata(self, request, headers):
         # get input data from buffer
@@ -83,6 +95,46 @@ class HttpListener(Listener):
         if request.typestr != allow.upper():
             raise MethodNotAllowed(allow.upper())
 
+    def _handle_groupchat_message(self, msg):
+        """Handles messages received from group chat"""
+        chatrooms = self._storage.get_chatrooms()
+
+        try:
+            data = chatrooms[msg['mucroom']]
+
+            # create message
+            message = {
+                'from': unicode(msg['mucnick']),
+                'room': unicode(msg['mucroom']),
+                'text': msg['body'],
+                'received': datetime.now()
+            }
+
+            postdata = {k: http_additional_serialize(v) for k, v in message.iteritems()}
+
+            # send message to postback_url
+            try:
+                r = grequests.post(data['url'], data=postdata)
+                grequests.send(r)
+            except TypeError:
+                pass
+        except KeyError:
+            pass
+
+    def register_room_monitoring(self, room, nick, password, postback_url):
+        self._storage.add_chatroom(room, nick, password, postback_url)
+        self.xmpp.join_chat_room(room, nick, password)
+
+    def deregister_room_monitoring(self, room):
+        try:
+            # try to get nickname from database
+            nickname = self._storage.get_chatrooms()[room]['nickname']
+            self.xmpp.leave_chat_room(room, nickname)
+        except KeyError:
+            log.debug('Cannot left room %s' % room)
+            pass
+        self._storage.delete_chatroom(room)
+
     def _handle_command(self, data, request):
         try:
             if re.match(r'^/message/.*', request.uri):  # message
@@ -94,6 +146,20 @@ class HttpListener(Listener):
 
                 additional_args = {k: v for k, v in data.iteritems() if k not in ('to', 'id', 'text')}
                 return self.xmpp.send_question(data['to'], data['text'], data['id'], **additional_args)
+            elif re.match(r'^/monitor_chatroom/.*', request.uri):  # monitor chatroom
+                self._check_allowed_method(request, 'POST')
+                password = None
+                try:
+                    password = data['password']
+                except KeyError:
+                    pass
+                return self.register_room_monitoring(data['room'], data['nickname'], password, data['postback_url'])
+            elif re.match(r'^/cancel_monitoring/.*', request.uri):  # cancel chatroom monitoring
+                return self.deregister_room_monitoring(data['room'])
+            elif re.match(r'^/cancel_all_monitoring/.*', request.uri):  # cancel all chatrooms monitoring
+                for room in self._storage.get_chatrooms().keys():
+                    self.deregister_room_monitoring(room)
+                return
         except KeyError:
             log.info('Ignoring unrecognized message')
             raise BadRequestError("Data missing needed attributes")

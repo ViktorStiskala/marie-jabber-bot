@@ -16,6 +16,7 @@ class DataStorage(object):
     _instance = None
     ANSWER_KEY = '__answers'
     MAPPING_KEY = '__question_mapping'
+    CHATROOMS_KEY = '__chatrooms'
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
@@ -24,6 +25,9 @@ class DataStorage(object):
 
     def __init__(self, host='localhost', port=6379, db=0):
         self._connection = redis.StrictRedis(host, port, db)
+
+    def clear_database(self):
+        self._connection.flushdb()
 
     def _decode_json(self, value):
         """JSON decode function with additional datetime parsing"""
@@ -71,6 +75,21 @@ class DataStorage(object):
     def delete_answer(self, jid):
         """Deletes answer text"""
         self._connection.hdel(self.ANSWER_KEY, jid)
+
+    def get_chatrooms(self):
+        data = self._connection.hgetall(self.CHATROOMS_KEY)
+        return {k: simplejson.loads(v) for k, v in data.items()}
+
+    def add_chatroom(self, room, nick, password, postback_url):
+        data = {
+            'nickname': nick,
+            'password': password,
+            'url': postback_url
+        }
+        self._connection.hset(self.CHATROOMS_KEY, room, simplejson.dumps(data))
+
+    def delete_chatroom(self, room):
+        self._connection.hdel(self.CHATROOMS_KEY, room)
 
     def set_questions_mapping(self, jid, mapping):
         """

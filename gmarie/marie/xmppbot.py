@@ -65,10 +65,13 @@ class XMPPBot(ClientXMPP, Greenlet):
 
         #self.add_event_handler("groupchat_message", self._message_received)
 
-    def join_chat_root(self, room, nick, password=None):
+    def join_chat_room(self, room, nick, password=None):
         """Join multi user chat room"""
         self._active_nicknames.add(nick)
         return self.plugin['xep_0045'].joinMUC(room=room, nick=nick, wait=True, password=password)
+
+    def leave_chat_room(self, room, nick):
+        return self.plugin['xep_0045'].leaveMUC(room, nick)
 
     def send_chat_message(self, to, text, authorize_user=True):
         if authorize_user:
@@ -104,9 +107,6 @@ class XMPPBot(ClientXMPP, Greenlet):
             self.disconnect()
 
         self.register_plugin('xep_0045')  # Multi-User Chat
-
-    def _muc_message(self, msg):
-        print msg['body']
 
     def _user_status_changed(self, presence):
         self.user_status_presence[presence['from'].bare] = presence
@@ -180,8 +180,6 @@ class XMPPBot(ClientXMPP, Greenlet):
         """
         Handles messages received from user.
         """
-        print msg
-
         if msg['type'] is None:
             msg['type'] = 'normal'
 
@@ -199,10 +197,7 @@ class XMPPBot(ClientXMPP, Greenlet):
                     command, params = body.partition(' ')[0::2]
 
                     method = getattr(self, self._bot_commands[command])  # raises AttributeError if method does not exist
-                    print method
-                    print method.__name__
                     if method._bot_command:  # raises AttributeError if not bot command
-                        print "processing command"
                         return self._process_command(command, method._bot_argsparser.parse_args(params), msg)
             except (AttributeError, KeyError):
                 pass
@@ -236,7 +231,7 @@ class XMPPBot(ClientXMPP, Greenlet):
             return "Please specify room to join"
 
         nickname = 'Marie' if nickname is None else nickname
-        self.join_chat_root(room, nickname, password)
+        self.join_chat_room(room, nickname, password)
 
     def _run(self):
         self.connect()
