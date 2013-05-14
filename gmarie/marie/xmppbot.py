@@ -1,19 +1,19 @@
 # Monkey-patch stdlib (have to be used before all other imports)
-import inspect
 import gevent.monkey
-from marie.utils import GatherBotCommands
-
 gevent.monkey.patch_all()
 
 import logging
 log = logging.getLogger(__name__)
 
 import gevent
+import subprocess
 from gevent import Greenlet
 from functools import wraps
+from datetime import datetime
 from sleekxmpp import ClientXMPP
 from sleekxmpp.exceptions import IqError, IqTimeout
 from args_parser import SepArgsParser
+from marie.utils import GatherBotCommands
 
 
 def bot_command(f=None, name=None, min_privilege='user', block=False, args_parser=SepArgsParser()):
@@ -107,6 +107,7 @@ class XMPPBot(ClientXMPP, Greenlet):
             self.disconnect()
 
         self.register_plugin('xep_0045')  # Multi-User Chat
+        self._started = datetime.now()
 
     def _user_status_changed(self, presence):
         self.user_status_presence[presence['from'].bare] = presence
@@ -222,9 +223,6 @@ class XMPPBot(ClientXMPP, Greenlet):
         users_with_any_subscription = filter(lambda x: x[1]['subscription'] != 'none', roster_dict.items())
         return "\n".join(dict(users_with_any_subscription).keys())
 
-    # TODO: privileged users
-    # TODO: chat room logging
-
     @bot_command
     def join_room(self, room=None, nickname=None, password=None):
         if room is None:
@@ -232,6 +230,18 @@ class XMPPBot(ClientXMPP, Greenlet):
 
         nickname = 'Marie' if nickname is None else nickname
         self.join_chat_room(room, nickname, password)
+
+    @bot_command
+    def server_uptime(self):
+        return subprocess.check_output('uptime').rstrip('\n')
+
+    @bot_command(min_privilege='manager')
+    def bot_uptime(self):
+        tdelta = datetime.now() - self._started
+        hours, rem = divmod(tdelta.seconds, 3600)
+        minutes, seconds = divmod(rem, 60)
+
+        return u"Bot uptime: %(hour)02d:%(min)02d:%(sec)02d" % {'hour': hours, 'min': minutes, 'sec': seconds}
 
     def _run(self):
         self.connect()
